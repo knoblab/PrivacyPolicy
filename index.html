@@ -21,27 +21,463 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.2.0/diff.min.js"></script>
 
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: "IBM Plex Sans", "Pretendard Variable", Pretendard, sans-serif; }
-    body {
-      display: flex; justify-content: center;
-      min-height: 100vh; background-color: #556042; color: #F7F6F2;
-      padding: 48px 20px;
+    :root {
+      --bg-olive: #556042;
+      --bg-sidebar: #F7F6F2;
+      --bg-sidebar-hover: #E7E6E1;
+      --bg-sidebar-active: #E7E6E1;
+      --border-sidebar: #C2C1BB;
+      --text-sidebar: #2B2B2E;
+      --text-sidebar-muted: #888783;
+      --paper-bg: #F7F6F2;
+      --paper-surface: #E7E6E1;
+      --paper-border: #C2C1BB;
+      --paper-divider: #E7E6E1;
+      --ink-primary: #2B2B2E;
+      --ink-secondary: #3A3A38;
+      --ink-muted: #888783;
+      --sidebar-width: 268px;
     }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "IBM Plex Sans", "Pretendard Variable", Pretendard, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bg-olive);
+      color: var(--text-sidebar);
+      display: flex;
+      overflow-x: hidden;
+    }
+
+    /* 전체 앱 쉘 (왼쪽 고정 사이드바 + 오른쪽 스크롤 영역) */
+    .app-shell {
+      display: flex;
+      width: 100%;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* 왼쪽 ChatGPT / Gemini 스타일 사이드바 (기존 에크루 페이퍼 컬러 & 직각 모서리) */
+    .side-menu {
+      width: var(--sidebar-width);
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-sidebar);
+      color: var(--text-sidebar);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      flex-shrink: 0;
+      padding: 18px 14px;
+      transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+                  transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+                  padding 0.25s ease;
+      z-index: 40;
+      user-select: none;
+    }
+
+    /* 사이드바 접힘 상태 (데스크톱) */
+    body.sidebar-collapsed .side-menu {
+      width: 0;
+      padding-left: 0;
+      padding-right: 0;
+      border-right-color: transparent;
+      overflow: hidden;
+    }
+
+    /* 사이드바 상단 바 (브랜드/타이틀 + 접기 버튼) */
+    .sidebar-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 4px 14px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--paper-divider);
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--ink-primary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+
+    .sidebar-brand-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 0;
+      background: var(--bg-olive);
+    }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 0;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--ink-muted);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .icon-btn:hover {
+      background: var(--paper-surface);
+      border-color: var(--paper-border);
+      color: var(--ink-primary);
+    }
+
+    /* 이전 버전과 비교 카드 (사이드바 상단 액션 영역) */
+    .compare-box {
+      background: var(--paper-surface);
+      border: 1px solid var(--paper-border);
+      border-radius: 0;
+      padding: 12px 13px;
+      margin: 0 0 18px;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .compare-box.active-diff {
+      background: #ECEFE7;
+      border-color: var(--bg-olive);
+    }
+
+    .compare-toggle-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--ink-primary);
+      gap: 8px;
+    }
+
+    .compare-label-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .compare-label-left svg {
+      color: var(--bg-olive);
+      flex-shrink: 0;
+    }
+
+    .compare-toggle-label input {
+      display: none;
+    }
+
+    .switch-track {
+      position: relative;
+      width: 34px;
+      height: 18px;
+      background: #D4D3CD;
+      border: 1px solid var(--paper-border);
+      border-radius: 0;
+      transition: background 0.2s ease, border-color 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+      background: var(--paper-bg);
+      border: 1px solid #9E9D97;
+      border-radius: 0;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background 0.2s ease;
+    }
+
+    .compare-toggle-label input:checked + .switch-track {
+      background: var(--bg-olive);
+      border-color: var(--bg-olive);
+    }
+
+    .compare-toggle-label input:checked + .switch-track .switch-thumb {
+      transform: translateX(16px);
+      background: var(--paper-bg);
+      border-color: var(--paper-bg);
+    }
+
+    .compare-hint {
+      font-size: 11px;
+      color: var(--ink-muted);
+      margin-top: 7px;
+      line-height: 1.45;
+    }
+
+    /* 사이드바 버전 히스토리 섹션 */
+    .sidebar-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px 6px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid var(--paper-divider);
+    }
+
+    .version-list-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink-muted);
+      letter-spacing: 0.02em;
+    }
+
+    .side-menu-count {
+      font-size: 11px;
+      color: var(--ink-muted);
+    }
+
+    .version-list {
+      list-style: none;
+      margin: 0;
+      padding: 2px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .version-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .version-list::-webkit-scrollbar-thumb {
+      background: var(--paper-border);
+      border-radius: 0;
+    }
+
+    .version-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      text-align: left;
+      padding: 9px 11px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 0;
+      color: var(--ink-secondary);
+      font-size: 12.5px;
+      cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+      white-space: nowrap;
+    }
+
+    .version-item-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .version-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 0;
+      background: var(--paper-border);
+      transition: background 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .version-item:hover {
+      background: var(--paper-surface);
+      border-color: var(--paper-border);
+      color: var(--ink-primary);
+    }
+
+    .version-item.active {
+      background: var(--paper-surface);
+      border-color: var(--bg-olive);
+      border-left: 3px solid var(--bg-olive);
+      color: var(--ink-primary);
+      font-weight: 600;
+    }
+
+    .version-item.active .version-dot {
+      background: var(--bg-olive);
+    }
+
+    .version-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 0;
+      background: var(--bg-olive);
+      border: 1px solid var(--bg-olive);
+      color: #F7F6F2;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+
+    .version-badge.upcoming {
+      background: #E8F4F8;
+      border-color: #B8DCE7;
+      color: #2B5A6B;
+    }
+
+    /* 사이드바 하단 돌아가기 링크 */
+    .sidebar-footer {
+      padding-top: 12px;
+      margin-top: 12px;
+      border-top: 1px solid var(--paper-divider);
+    }
+
+    .sidebar-back-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 10px;
+      border-radius: 0;
+      border: 1px solid transparent;
+      color: var(--ink-muted);
+      text-decoration: none;
+      font-size: 12px;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .sidebar-back-link:hover {
+      background: var(--paper-surface);
+      border-color: var(--paper-border);
+      color: var(--ink-primary);
+    }
+
+    /* 기존 select 호환용 숨김 처리 */
+    .sr-only-select {
+      display: none;
+    }
+
+    /* 오른쪽 메인 스테이지 */
+    .main-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 28px 64px;
+      min-width: 0;
+      position: relative;
+    }
+
+    /* 사이드바가 접혔을 때 왼쪽 상단에 나타나는 플로팅 열기 버튼 */
+    .floating-open-btn {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      z-index: 30;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 12px;
+      border-radius: 0;
+      background: var(--paper-bg);
+      border: 1px solid var(--paper-border);
+      color: var(--ink-primary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-8px);
+      transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+    }
+
+    .floating-open-btn:hover {
+      background: var(--paper-surface);
+    }
+
+    body.sidebar-collapsed .floating-open-btn {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+
+    /* 오른쪽 메인 문서 카드 (기존 에디토리얼 디자인 유지 & 직각 모서리) */
     .doc-card {
-      background: #F7F6F2; color: #2B2B2E;
-      padding: 48px 44px; border: 1px solid #C2C1BB;
-      width: 100%; max-width: 760px;
+      background: var(--paper-bg);
+      color: var(--ink-primary);
+      padding: 48px 44px;
+      border: 1px solid var(--paper-border);
+      border-radius: 0;
+      width: 100%;
+      max-width: 760px;
       height: fit-content;
     }
-    .brand-header { display: flex; justify-content: center; margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid #E7E6E1; }
-    .brand-logo { height: 28px; width: auto; }
+
+    .brand-header {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--paper-divider);
+    }
+
+    .brand-logo {
+      height: 28px;
+      width: auto;
+    }
+
+    .top-nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
 
     .back-link {
-      display: inline-flex; align-items: center; gap: 4px;
-      color: #888783; text-decoration: none; font-size: 12px;
-      margin-bottom: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--ink-muted);
+      text-decoration: none;
+      font-size: 12px;
+      transition: color 0.15s ease;
     }
-    .back-link:hover { color: #2B2B2E; }
+
+    .back-link:hover {
+      color: var(--ink-primary);
+    }
+
+    .current-version-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #4A4A47;
+      background: var(--paper-surface);
+      border: 1px solid var(--paper-border);
+      padding: 4px 10px;
+      border-radius: 0;
+      font-weight: 500;
+    }
+
+    .current-version-pill::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 0;
+      background: var(--bg-olive);
+    }
 
     h1 { font-size: 22px; font-weight: 600; color: #2B2B2E; margin-bottom: 6px; }
     .effective-date { font-size: 12px; color: #888783; margin-bottom: 20px; }
@@ -85,126 +521,240 @@
 
     hr { border: none; border-top: 1px solid #E7E6E1; margin: 28px 0; }
 
-    @media (max-width: 600px) {
-      .doc-card { padding: 32px 22px; }
-    }
-
-    /* New styles for version control and diffs */
-    .controls {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #E7E6E1;
-      padding: 12px 16px;
-      border: 1px solid #C2C1BB;
-      margin-bottom: 24px;
-      font-size: 13px;
-      border-radius: 4px;
-    }
-    @media (max-width: 600px) {
-      .controls {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 12px;
-      }
-    }
-    .controls select {
-      padding: 4px 8px;
-      font-size: 13px;
-      border: 1px solid #C2C1BB;
-      border-radius: 4px;
-      background: #fff;
-      color: #2B2B2E;
-      margin-left: 6px;
-    }
-    .controls label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-    }
+    /* 예정 업데이트 배너 */
     #banner {
       display: none;
       background: #E8F4F8;
       border: 1px solid #B8DCE7;
+      border-radius: 0;
       color: #2B5A6B;
-      padding: 12px 16px;
-      margin-bottom: 20px;
-      font-size: 13px;
-      border-radius: 4px;
+      padding: 12px 14px;
+      margin-bottom: 22px;
+      font-size: 12px;
+      line-height: 1.5;
       cursor: pointer;
+      transition: background 0.15s ease;
     }
     #banner:hover {
       background: #DDF0F6;
     }
+
+    /* 비교(Diff) 뷰 스타일 */
     .diff-view {
       white-space: pre-wrap;
       font-size: 13px;
-      line-height: 1.7;
+      line-height: 1.75;
       color: #3A3A38;
-      background: #fff;
-      padding: 24px;
+      background: #FDFCFA;
+      padding: 22px;
       border: 1px solid #C2C1BB;
-      border-radius: 4px;
+      border-radius: 0;
     }
+
+    .diff-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #2B2B2E;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #E7E6E1;
+    }
+
+    .diff-legend {
+      display: inline-flex;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 400;
+    }
+
     ins {
       background: #e6ffed;
       color: #1a7f37;
       text-decoration: none;
-      padding: 2px 4px;
-      border-radius: 3px;
+      padding: 1px 4px;
+      border-radius: 0;
     }
+
     del {
       background: #ffebe9;
       color: #cf222e;
       text-decoration: line-through;
-      padding: 2px 4px;
-      border-radius: 3px;
+      padding: 1px 4px;
+      border-radius: 0;
     }
-    .diff-header {
-      font-weight: 600;
-      margin-bottom: 16px;
-      font-size: 14px;
-      color: #2B2B2E;
-      padding-bottom: 8px;
-      border-bottom: 1px solid #E7E6E1;
+
+    /* 모바일 오버레이 백드롭 */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 24, 16, 0.48);
+      backdrop-filter: blur(2px);
+      z-index: 35;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    /* 모바일 및 태블릿 반응형: 오프캔버스 드로어 방식으로 전환 */
+    @media (max-width: 920px) {
+      .side-menu {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 272px !important;
+        padding: 16px 12px !important;
+        transform: translateX(-100%);
+        box-shadow: 12px 0 32px rgba(0, 0, 0, 0.28);
+      }
+
+      body.mobile-drawer-open .side-menu {
+        transform: translateX(0);
+      }
+
+      body.mobile-drawer-open .sidebar-backdrop {
+        display: block;
+        opacity: 1;
+      }
+
+      .floating-open-btn {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(0);
+      }
+
+      .main-stage {
+        padding: 64px 16px 48px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .doc-card {
+        padding: 32px 22px;
+      }
     }
   </style>
 </head>
 <body>
 
-<div class="doc-card">
-  <div class="brand-header">
-    <img src="/img/logo.svg" alt="Knoblab" class="brand-logo">
-  </div>
+<div class="app-shell">
+  <!-- 모바일용 배경 딤 오버레이 -->
+  <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
-  <a href="/" class="back-link">← 로그인으로 돌아가기</a>
-
-  <div id="banner" onclick="showFutureUpdate()"></div>
-
-  <div class="controls">
-    <div>
-      <label for="version-select">시행일자:
-        <select id="version-select" onchange="onVersionChange()"></select>
-      </label>
+  <!-- 왼쪽 사이드바 (ChatGPT/Gemini 스타일) -->
+  <aside class="side-menu" aria-label="버전 기록 및 비교 메뉴">
+    <div class="sidebar-top">
+      <div class="sidebar-brand">
+        <span class="sidebar-brand-dot"></span>
+        <span>개인정보 처리방침 기록</span>
+      </div>
+      <button type="button" class="icon-btn" onclick="toggleSidebar()" title="사이드바 접기" aria-label="사이드바 접기">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+          <rect x="3" y="3" width="18" height="18"></rect>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+        </svg>
+      </button>
     </div>
-    <label>
-      <input type="checkbox" id="diff-checkbox" onchange="renderContent()"> 이전 버전과 비교
-    </label>
-  </div>
 
-  <div id="policy-content">
-    <p>로딩 중...</p>
-  </div>
+    <!-- 이전 버전과 비교 스위치 -->
+    <div class="compare-box" id="compare-box-card">
+      <label class="compare-toggle-label" for="diff-checkbox">
+        <span class="compare-label-left">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 3h5v5"></path>
+            <path d="M8 3H3v5"></path>
+            <path d="M21 3l-7 7"></path>
+            <path d="M3 3l7 7"></path>
+            <path d="M16 21h5v-5"></path>
+            <path d="M8 21H3v-5"></path>
+            <path d="M21 21l-7-7"></path>
+            <path d="M3 21l7-7"></path>
+          </svg>
+          <span>이전 버전과 비교</span>
+        </span>
+        <input type="checkbox" id="diff-checkbox" onchange="renderContent()">
+        <span class="switch-track">
+          <span class="switch-thumb"></span>
+        </span>
+      </label>
+      <p class="compare-hint" id="compare-hint-text">변경된 문구를 색상으로 표시합니다.</p>
+    </div>
 
-  <div class="telemetry-footer"><span>KNOBLAB © 2026</span></div>
+    <!-- 버전 타임라인 목록 -->
+    <div class="sidebar-section-header">
+      <span class="version-list-label">시행일자 내역</span>
+      <span class="side-menu-count" id="version-count-label"></span>
+    </div>
+
+    <div id="version-list" class="version-list" role="listbox" aria-label="시행일자 목록"></div>
+
+    <!-- 기존 스크립트 호환용 숨김 select -->
+    <select id="version-select" class="sr-only-select" onchange="onVersionChange()"></select>
+
+    <div class="sidebar-footer">
+      <a href="/" class="sidebar-back-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>로그인으로 돌아가기</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- 오른쪽 메인 문서 영역 -->
+  <div class="main-stage">
+    <!-- 사이드바가 닫혔을 때 나타나는 열기 버튼 -->
+    <button type="button" class="floating-open-btn" onclick="toggleSidebar()" aria-label="버전 기록 메뉴 열기">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="3" width="18" height="18"></rect>
+        <line x1="9" y1="3" x2="9" y2="21"></line>
+      </svg>
+      <span>버전 기록 · 비교</span>
+    </button>
+
+    <main class="doc-card">
+      <div class="brand-header">
+        <img src="/img/logo.svg" alt="Knoblab" class="brand-logo">
+      </div>
+
+      <div class="top-nav-row">
+        <a href="/" class="back-link">← 로그인으로 돌아가기</a>
+        <span class="current-version-pill" id="active-version-indicator">시행일 확인 중...</span>
+      </div>
+
+      <div id="banner" onclick="showFutureUpdate()"></div>
+
+      <div id="policy-content">
+        <p>로딩 중...</p>
+      </div>
+
+      <div class="telemetry-footer">
+        <span>PRIVACY POLICY</span>
+        <span>KNOBLAB © 2026</span>
+      </div>
+    </main>
+  </div>
 </div>
 
 <script>
-  const versions = ['20260825'];
-  let currentVersionDate = null;
+  const versions = ['20260825', '20261029'];
   let serverDate = null;
   const htmlCache = {};
+
+  function toggleSidebar() {
+    const isMobile = window.matchMedia('(max-width: 920px)').matches;
+    if (isMobile) {
+      document.body.classList.toggle('mobile-drawer-open');
+    } else {
+      document.body.classList.toggle('sidebar-collapsed');
+    }
+  }
 
   async function init() {
     serverDate = await getServerDate();
@@ -221,18 +771,19 @@
       }
     });
 
-    // Sort descending
+    // 최신순 정렬
     pastOrCurrentVersions.sort((a, b) => b.localeCompare(a));
     futureVersions.sort((a, b) => a.localeCompare(b));
 
     const select = document.getElementById('version-select');
-    pastOrCurrentVersions.forEach((v, index) => {
-      const option = document.createElement('option');
-      option.value = v;
-      option.textContent = formatVersionLabel(v) + (index === 0 ? ' (현재)' : '');
-      select.appendChild(option);
-    });
+    const listContainer = document.getElementById('version-list');
+    const countLabel = document.getElementById('version-count-label');
 
+    select.innerHTML = '';
+    listContainer.innerHTML = '';
+    countLabel.textContent = `${versions.length}개 버전`;
+
+    // 예정된 버전 먼저 상단에 배치
     if (futureVersions.length > 0) {
       const nextUpdate = futureVersions[0];
       const banner = document.getElementById('banner');
@@ -240,31 +791,101 @@
       banner.style.display = 'block';
       banner.dataset.version = nextUpdate;
 
-      // Add future versions to select, marked as (예정)
       futureVersions.slice().reverse().forEach(v => {
-        const option = document.createElement('option');
-        option.value = v;
-        option.textContent = formatVersionLabel(v) + ' (예정)';
-        select.insertBefore(option, select.firstChild);
+        appendVersionOption(select, listContainer, v, '예정', 'upcoming');
       });
     }
 
-    // Determine default selected version (latest current)
-    let defaultVersion = pastOrCurrentVersions.length > 0 ? pastOrCurrentVersions[0] : versions[versions.length - 1];
-    select.value = defaultVersion;
+    // 현재 및 이전 버전 배치
+    pastOrCurrentVersions.forEach((v, index) => {
+      const badgeText = index === 0 ? '현재' : '';
+      appendVersionOption(select, listContainer, v, badgeText, 'current');
+    });
 
-    await renderContent();
+    // 기본 선택 버전 결정 (현재 시행 중인 최신 버전 우선)
+    let defaultVersion = pastOrCurrentVersions.length > 0
+      ? pastOrCurrentVersions[0]
+      : versions[versions.length - 1];
+
+    selectVersion(defaultVersion);
+  }
+
+  function appendVersionOption(selectEl, listEl, version, badgeText, badgeType) {
+    // 숨김 select 옵션 추가
+    const option = document.createElement('option');
+    option.value = version;
+    option.textContent = formatVersionLabel(version) + (badgeText ? ` (${badgeText})` : '');
+    selectEl.appendChild(option);
+
+    // 왼쪽 메뉴 버튼 아이템 추가
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'version-item';
+    btn.dataset.version = version;
+    btn.onclick = () => {
+      selectVersion(version);
+      if (window.matchMedia('(max-width: 920px)').matches) {
+        document.body.classList.remove('mobile-drawer-open');
+      }
+    };
+
+    const leftWrap = document.createElement('span');
+    leftWrap.className = 'version-item-left';
+
+    const dot = document.createElement('span');
+    dot.className = 'version-dot';
+    leftWrap.appendChild(dot);
+
+    const dateSpan = document.createElement('span');
+    dateSpan.textContent = formatVersionCompact(version);
+    leftWrap.appendChild(dateSpan);
+
+    btn.appendChild(leftWrap);
+
+    if (badgeText) {
+      const badge = document.createElement('span');
+      badge.className = `version-badge ${badgeType === 'upcoming' ? 'upcoming' : ''}`;
+      badge.textContent = badgeText;
+      btn.appendChild(badge);
+    }
+
+    listEl.appendChild(btn);
+  }
+
+  function selectVersion(version) {
+    const select = document.getElementById('version-select');
+    select.value = version;
+
+    // 사이드 메뉴 활성화 표시 업데이트
+    const items = document.querySelectorAll('.version-item');
+    items.forEach(item => {
+      if (item.dataset.version === version) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    });
+
+    // 상단 현재 선택된 버전 표시 업데이트
+    const activeIndicator = document.getElementById('active-version-indicator');
+    if (activeIndicator) {
+      activeIndicator.textContent = `시행일 · ${formatVersionLabel(version)}`;
+    }
+
+    renderContent();
   }
 
   window.showFutureUpdate = () => {
     const banner = document.getElementById('banner');
     const v = banner.dataset.version;
-    document.getElementById('version-select').value = v;
-    renderContent();
+    if (v) {
+      selectVersion(v);
+    }
   };
 
   async function onVersionChange() {
-    await renderContent();
+    const select = document.getElementById('version-select');
+    selectVersion(select.value);
   }
 
   async function fetchHtml(version) {
@@ -286,17 +907,32 @@
     const version = select.value;
     const showDiff = document.getElementById('diff-checkbox').checked;
     const container = document.getElementById('policy-content');
+    const hintText = document.getElementById('compare-hint-text');
+    const compareCard = document.getElementById('compare-box-card');
+
+    if (compareCard) {
+      compareCard.classList.toggle('active-diff', showDiff);
+    }
 
     container.innerHTML = '<p>로딩 중...</p>';
+
+    const allSorted = versions.slice().sort();
+    const currentIndex = allSorted.indexOf(version);
+    const hasPrev = currentIndex > 0;
+
+    if (hintText) {
+      if (!hasPrev) {
+        hintText.textContent = '첫 번째 버전이므로 이전 비교 대상이 없습니다.';
+      } else {
+        const prevVersion = allSorted[currentIndex - 1];
+        hintText.textContent = `${formatVersionCompact(prevVersion)} 버전과 차이점을 비교합니다.`;
+      }
+    }
 
     const html = await fetchHtml(version);
 
     if (showDiff) {
-      // Find the previous version
-      const allSorted = versions.slice().sort();
-      const currentIndex = allSorted.indexOf(version);
-
-      if (currentIndex > 0) {
+      if (hasPrev) {
         const prevVersion = allSorted[currentIndex - 1];
         const prevHtml = await fetchHtml(prevVersion);
 
@@ -305,7 +941,16 @@
 
         const diff = Diff.diffWords(oldText, newText);
         let diffHtml = '<div class="diff-view">';
-        diffHtml += `<div class="diff-header">${formatVersionLabel(prevVersion)} 과(와) 비교</div>`;
+        diffHtml += `
+          <div class="diff-header">
+            <span>${formatVersionLabel(prevVersion)} 버전과 비교</span>
+            <span class="diff-legend">
+              <ins>+ 추가됨</ins>
+              <del>- 삭제됨</del>
+            </span>
+          </div>
+        `;
+
         diff.forEach(part => {
           const text = part.value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
           if (part.added) {
@@ -319,7 +964,7 @@
         diffHtml += '</div>';
         container.innerHTML = diffHtml;
       } else {
-        container.innerHTML = '<div class="diff-view"><p>비교할 이전 버전이 없습니다.</p></div><br>' + html;
+        container.innerHTML = '<div class="diff-view" style="margin-bottom: 20px;"><p style="margin:0;">비교할 이전 버전이 없습니다.</p></div>' + html;
       }
     } else {
       container.innerHTML = html;
@@ -359,8 +1004,15 @@
   }
 
   function formatVersionLabel(v) {
-    if (v.length === 8) {
-      return `${v.substring(0,4)}년 ${parseInt(v.substring(4,6),10)}월 ${parseInt(v.substring(6,8),10)}일`;
+    if (v && v.length === 8) {
+      return `${v.substring(0, 4)}년 ${parseInt(v.substring(4, 6), 10)}월 ${parseInt(v.substring(6, 8), 10)}일`;
+    }
+    return v;
+  }
+
+  function formatVersionCompact(v) {
+    if (v && v.length === 8) {
+      return `${v.substring(0, 4)}. ${v.substring(4, 6)}. ${v.substring(6, 8)}.`;
     }
     return v;
   }
