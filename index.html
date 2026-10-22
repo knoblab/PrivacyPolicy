@@ -420,6 +420,9 @@
       width: 100%;
       max-width: 760px;
       height: fit-content;
+      margin: 0 auto;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .brand-header {
@@ -542,6 +545,8 @@
     /* 비교(Diff) 뷰 스타일 */
     .diff-view {
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       font-size: 13px;
       line-height: 1.75;
       color: #3A3A38;
@@ -549,6 +554,16 @@
       padding: 22px;
       border: 1px solid #C2C1BB;
       border-radius: 0;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    .diff-line {
+      margin-bottom: 6px;
+    }
+
+    .diff-line-empty {
+      height: 10px;
     }
 
     .diff-header {
@@ -743,7 +758,7 @@
 </div>
 
 <script>
-  const versions = ['20260825', '20261029'];
+  const versions = ['20260825'];
   let serverDate = null;
   const htmlCache = {};
 
@@ -894,12 +909,97 @@
       const res = await fetch(`docs/${version}.html`);
       if (!res.ok) throw new Error('Failed to load');
       const text = await res.text();
-      htmlCache[version] = text;
-      return text;
+      const cleaned = sanitizePolicyHtml(text);
+      htmlCache[version] = cleaned;
+      return cleaned;
     } catch (err) {
       console.error(err);
       return `<p>문서를 불러오는 중 오류가 발생했습니다.</p>`;
     }
+  }
+
+  function sanitizePolicyHtml(rawHtml) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rawHtml, 'text/html');
+
+    // Cloudflare 주입 스크립트 및 불필요한 태그 제거
+    doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+
+    return doc.body ? doc.body.innerHTML : rawHtml;
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function buildAlignedDiffHtml(oldText, newText) {
+    // 전체 문서를 한 번에 diffWords 하면 조항 추가/삭제 시 문단이 밀리므로,
+    // 먼저 줄(문단) 단위로 정렬한 뒤 변경된 줄끼리만 단어 단위 비교를 수행합니다.
+    const lineDiffs = Diff.diffLines(oldText, newText);
+    let result = '';
+    let i = 0;
+
+    while (i < lineDiffs.length) {
+      const current = lineDiffs[i];
+      const next = lineDiffs[i + 1];
+
+      // 삭제 후 바로 추가가 이어지는 경우(수정된 문단): 줄별로 매칭하여 단어 비교
+      if (current && current.removed && next && next.added) {
+        const oldLines = current.value.replace(/\n$/, '').split('\n');
+        const newLines = next.value.replace(/\n$/, '').split('\n');
+        const maxLen = Math.max(oldLines.length, newLines.length);
+
+        for (let k = 0; k < maxLen; k++) {
+          const oLine = oldLines[k];
+          const nLine = newLines[k];
+
+          if (oLine !== undefined && nLine !== undefined) {
+            const wordDiff = Diff.diffWords(oLine, nLine);
+            let lineHtml = '';
+            wordDiff.forEach(part => {
+              const escaped = escapeHtml(part.value);
+              if (part.added) {
+                lineHtml += `<ins>${escaped}</ins>`;
+              } else if (part.removed) {
+                lineHtml += `<del>${escaped}</del>`;
+              } else {
+                lineHtml += escaped;
+              }
+            });
+            result += `<div class="diff-line">${lineHtml}</div>`;
+          } else if (oLine !== undefined) {
+            result += `<div class="diff-line"><del>${escapeHtml(oLine)}</del></div>`;
+          } else if (nLine !== undefined) {
+            result += `<div class="diff-line"><ins>${escapeHtml(nLine)}</ins></div>`;
+          }
+        }
+        i += 2;
+        continue;
+      }
+
+      const lines = current.value.replace(/\n$/, '').split('\n');
+      lines.forEach(line => {
+        if (line.trim() === '') {
+          result += `<div class="diff-line-empty"></div>`;
+          return;
+        }
+        const escaped = escapeHtml(line);
+        if (current.added) {
+          result += `<div class="diff-line"><ins>${escaped}</ins></div>`;
+        } else if (current.removed) {
+          result += `<div class="diff-line"><del>${escaped}</del></div>`;
+        } else {
+          result += `<div class="diff-line">${escaped}</div>`;
+        }
+      });
+
+      i++;
+    }
+
+    return result;
   }
 
   async function renderContent() {
@@ -939,7 +1039,6 @@
         const oldText = extractText(prevHtml);
         const newText = extractText(html);
 
-        const diff = Diff.diffWords(oldText, newText);
         let diffHtml = '<div class="diff-view">';
         diffHtml += `
           <div class="diff-header">
@@ -950,17 +1049,7 @@
             </span>
           </div>
         `;
-
-        diff.forEach(part => {
-          const text = part.value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          if (part.added) {
-            diffHtml += `<ins>${text}</ins>`;
-          } else if (part.removed) {
-            diffHtml += `<del>${text}</del>`;
-          } else {
-            diffHtml += text;
-          }
-        });
+        diffHtml += buildAlignedDiffHtml(oldText, newText);
         diffHtml += '</div>';
         container.innerHTML = diffHtml;
       } else {
@@ -972,15 +1061,29 @@
   }
 
   function extractText(html) {
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    div.style.position = 'absolute';
-    div.style.left = '-9999px';
-    div.style.visibility = 'hidden';
-    document.body.appendChild(div);
-    const text = div.innerText || div.textContent;
-    document.body.removeChild(div);
-    return text.replace(/\n{3,}/g, '\n\n').trim();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // 스크립트 및 스타일 태그 완전 제거
+    doc.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+
+    // 표 셀(th, td) 사이에 구분 공백을 넣어 텍스트가 붙지 않도록 처리
+    doc.querySelectorAll('th, td').forEach(cell => {
+      cell.appendChild(doc.createTextNode('   '));
+    });
+
+    // 블록 요소 뒤에 줄바꿈 보장
+    doc.querySelectorAll('h1, h2, h3, h4, p, li, tr, div, br, hr').forEach(block => {
+      block.appendChild(doc.createTextNode('\n'));
+    });
+
+    const rawText = doc.body ? (doc.body.textContent || '') : '';
+    return rawText
+      .split('\n')
+      .map(line => line.replace(/[ \t]+/g, ' ').trim())
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   async function getServerDate() {
